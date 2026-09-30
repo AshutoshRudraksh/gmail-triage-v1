@@ -72,17 +72,17 @@ def _queue_message(
     if key in handled_keys:
         return False
     message = message_ref if "labelIds" in message_ref else _message(gmail, message_id)
-    common = {
-        "key": key,
-        "thread_id": str(message.get("threadId", message_ref.get("threadId", ""))),
-        "timestamp": now(),
-        "run_id": run_id,
-    }
+    thread_id = str(message.get("threadId", message_ref.get("threadId", "")))
+    timestamp = now()
     if "INBOX" in message.get("labelIds", []):
-        appended = store.append_decision(PendingJob(**common))
+        appended = store.append_decision(
+            PendingJob(key=key, thread_id=thread_id, timestamp=timestamp, run_id=run_id)
+        )
         handled_keys.add(key)
         return appended
-    store.append_decision(NotInInboxRecord(**common))
+    store.append_decision(
+        NotInInboxRecord(key=key, thread_id=thread_id, timestamp=timestamp, run_id=run_id)
+    )
     handled_keys.add(key)
     return False
 

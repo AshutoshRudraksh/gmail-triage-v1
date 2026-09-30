@@ -45,7 +45,7 @@ from triage.pipeline import (
     classify_pending,
     incremental_intake,
 )
-from triage.policy import POLICY_VERSION, decide, proposed_delta
+from triage.policy import POLICY_VERSION, decide
 
 
 def decision(message_id: str, history_id: str, outcome: PolicyOutcome) -> CompletedDecision:
@@ -64,7 +64,7 @@ def decision(message_id: str, history_id: str, outcome: PolicyOutcome) -> Comple
         answer,
         POLICY_VERSION,
         policy,
-        proposed_delta(policy),
+        proposed_reconciliation((), policy.outcome, ()),
     )
 
 
@@ -234,7 +234,9 @@ def test_incremental_queues_complete_oversized_record_and_orders_numerically(
         }
     )
     assert incremental_intake(gmail, store, 1, "run") == 2
-    assert store.read_checkpoint().history_id == "10"
+    checkpoint = store.read_checkpoint()
+    assert checkpoint is not None
+    assert checkpoint.history_id == "10"
     assert [job.key.message_id for job in store.pending_jobs()] == ["m0", "m1"]
 
 
@@ -297,7 +299,9 @@ def test_replayed_record_does_not_reverse_durable_handling(tmp_path: Path) -> No
     assert incremental_intake(gmail, store, 50, "replay") == 0
     assert store.pending_jobs() == (job,)
     assert len(store.decision_events()) == 1
-    assert store.read_checkpoint().history_id == "10"
+    checkpoint = store.read_checkpoint()
+    assert checkpoint is not None
+    assert checkpoint.history_id == "10"
 
 
 def test_expired_checkpoint_stops_without_advancing(tmp_path: Path) -> None:
@@ -311,7 +315,9 @@ def test_expired_checkpoint_stops_without_advancing(tmp_path: Path) -> None:
     gmail = FakeGmail({"users.history.list": [ExpiredHistory()]})
     with pytest.raises(CheckpointError, match="expired"):
         incremental_intake(gmail, store, 50, "run")
-    assert store.read_checkpoint().history_id == "9"
+    checkpoint = store.read_checkpoint()
+    assert checkpoint is not None
+    assert checkpoint.history_id == "9"
     assert store.decision_events() == ()
 
 
@@ -552,3 +558,65 @@ def test_failed_apply_remains_pending(tmp_path: Path) -> None:
         ApplyAttempt(item.key, "time", "run", LabelDelta(), ApplyResult.FAILED, "error")
     )
     assert store.pending_apply_decisions() == (item,)
+
+
+def test_persisted_logs_omit_message_text(tmp_path: Path) -> None:
+    store = StateStore(tmp_path)
+    store.append_decision(PendingJob(ClassificationKey("m", "2", "1"), "t", "time", "run"))
+    message = {
+        "id": "m",
+        "threadId": "t",
+        "labelIds": ["INBOX"],
+        "snippet": "hello unique-snippet-xyz",
+        "payload": {
+            "headers": [
+                {"name": "From", "value": "a@example.com"},
+                {"name": "Subject", "value": "Unique-Subject-Qq"},
+            ]
+        },
+    }
+    gmail = FakeGmail({"users.messages.get": [message]})
+    completed = classify_pending(gmail, FakeJev(answers()), store, 1, "run")
+    assert len(completed) == 1
+    labels = {
+        "labels": [
+            {"name": "Triage/NeedsAction", "id": "needs"},
+            {"name": "Triage/PromoNoise", "id": "promo"},
+            {"name": "Triage/SecurityReview", "id": "security"},
+        ]
+    }
+    apply_gmail = FakeGmail(
+        {
+            "users.labels.list": [labels],
+            "users.messages.get": [{"labelIds": ["INBOX"]}],
+        }
+    )
+    assert apply_decisions(apply_gmail, store, 50, "apply") == 1
+    combined = store.decisions_path.read_text() + store.apply_path.read_text()
+    assert "a@example.com" not in combined
+    assert "hello unique-snippet-xyz" not in combined
+    assert "Unique-Subject-Qq" not in combined
+    assert "Sender:" not in combined
+
+
+def test_apply_never_lists_history_or_inbox(tmp_path: Path) -> None:
+    store = StateStore(tmp_path)
+    store.append_decision(decision("m", "2", PolicyOutcome.REVIEW_QUEUE))
+    gmail = FakeGmail(
+        {
+            "users.labels.list": [
+                {
+                    "labels": [
+                        {"name": "Triage/NeedsAction", "id": "needs"},
+                        {"name": "Triage/PromoNoise", "id": "promo"},
+                        {"name": "Triage/SecurityReview", "id": "security"},
+                    ]
+                }
+            ],
+            "users.messages.get": [{"labelIds": ["INBOX"]}],
+        }
+    )
+    assert apply_decisions(gmail, store, 50, "apply") == 1
+    methods = {method for method, _ in gmail.calls}
+    assert "users.history.list" not in methods
+    assert "users.messages.list" not in methods

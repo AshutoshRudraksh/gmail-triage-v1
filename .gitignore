@@ -25,3 +25,4 @@ secrets/*
 .cursor/skills/verify-gmail-triage/evidence/
 .cursor/skills/verify-gmail-triage/runs/
 .cursor/debug-*.log
+.audit/

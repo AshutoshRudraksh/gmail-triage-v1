@@ -23,7 +23,7 @@ SCAM_LEVELS = (
     "probably malicious",
     "highly likely malicious",
 )
-QUESTIONS = {
+QUESTIONS: dict[str, dict[str, Any]] = {
     "category": {
         "type": "choice",
         "instructions": "Choose the message's primary purpose.",

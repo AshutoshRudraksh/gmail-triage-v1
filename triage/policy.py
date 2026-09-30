@@ -1,4 +1,4 @@
-from .models import LabelDelta, PolicyDecision, PolicyOutcome, ValidatedAnswers
+from .models import PolicyDecision, PolicyOutcome, ValidatedAnswers
 
 POLICY_VERSION = "1"
 MANAGED_LABEL_NAMES = (
@@ -20,11 +20,3 @@ def decide(answers: ValidatedAnswers) -> PolicyDecision:
     label = () if outcome is PolicyOutcome.REVIEW_QUEUE else (outcome.value,)
     section = None if outcome is PolicyOutcome.PROMO_NOISE else outcome.value
     return PolicyDecision(outcome, label, section)
-
-
-def proposed_delta(decision: PolicyDecision) -> LabelDelta:
-    selected = set(decision.managed_labels)
-    return LabelDelta(
-        add=tuple(sorted(selected)),
-        remove=tuple(sorted(set(MANAGED_LABEL_NAMES) - selected)),
-    )

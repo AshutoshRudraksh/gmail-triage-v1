@@ -5,9 +5,9 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Protocol
 
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
+from google.oauth2.credentials import Credentials  # type: ignore[import-untyped]
+from google_auth_oauthlib.flow import InstalledAppFlow  # type: ignore[import-untyped]
+from googleapiclient.discovery import build  # type: ignore[import-untyped]
 
 READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify"

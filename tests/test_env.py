@@ -61,7 +61,7 @@ def test_secret_files_are_ignored_and_example_is_not() -> None:
         "secrets/credentials.json",
         "secrets/token.json",
         "client_secret.json",
-        ".cursor/debug-50c9f7.log",
+        ".cursor/debug-example.log",
         "gmail_triage.egg-info/PKG-INFO",
         ".coverage",
         "htmlcov/index.html",
