@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import shutil
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import skill_root
+
+
+def main() -> int:
+    runs = skill_root() / "runs"
+    if runs.exists():
+        shutil.rmtree(runs)
+    print(f"removed {runs}")
+    evidence = skill_root() / "evidence"
+    print(f"kept {evidence}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import python_bin, repo_root, require_venv
+
+
+def main() -> int:
+    root = repo_root()
+    binary = require_venv()
+    version = subprocess.run(
+        [str(binary), "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=root,
+    ).stdout.strip()
+    major, minor = (int(part) for part in version.split("."))
+    if (major, minor) < (3, 11):
+        print(f"python {version} is older than 3.11", file=sys.stderr)
+        return 1
+    subprocess.run(
+        [str(binary), "-c", "import triage, triage.dry_run, triage.apply, triage.env"],
+        check=True,
+        cwd=root,
+    )
+    example = (root / ".env.example").read_text(encoding="utf-8")
+    for needle in ("vck_", "sk-", "AIza"):
+        if needle in example:
+            print(f".env.example contains secret prefix {needle}", file=sys.stderr)
+            return 1
+    helpers = Path(__file__).resolve().parent
+    for name in ("doctor", "drive-dry-run", "drive-cli-gates", "cleanup"):
+        path = helpers / name
+        if not os_access_execute(path):
+            print(f"helper is not executable: {path}", file=sys.stderr)
+            return 1
+    print(f"doctor ok python={version} root={root}")
+    return 0
+
+
+def os_access_execute(path: Path) -> bool:
+    import os
+
+    return path.is_file() and os.access(path, os.X_OK)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

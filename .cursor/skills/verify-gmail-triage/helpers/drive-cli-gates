@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import (
+    evidence_dir,
+    isolated_env,
+    new_run_id,
+    python_bin,
+    repo_root,
+    require_venv,
+    run_dir,
+    write_text,
+)
+
+
+def run_cli(argv: list[str], stdin: str, env: dict[str, str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(python_bin()), "-m", *argv],
+        input=stdin,
+        env=env,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def record(feature: str, run_id: str, name: str, argv: list[str], stdin: str, proc: subprocess.CompletedProcess[str], expected: int, needle: str) -> bool:
+    evidence = evidence_dir(feature, run_id)
+    write_text(evidence / "command.txt", " ".join(["python", "-m", *argv]) + "\n")
+    write_text(evidence / "stdin.txt", stdin)
+    write_text(evidence / "stdout.txt", proc.stdout)
+    write_text(evidence / "stderr.txt", proc.stderr)
+    write_text(evidence / "exit_code.txt", f"{proc.returncode}\n")
+    combined = proc.stdout + proc.stderr
+    ok = proc.returncode == expected and needle in combined
+    write_text(evidence / "result.txt", "pass\n" if ok else "fail\n")
+    print(evidence)
+    return ok
+
+
+def main() -> int:
+    require_venv()
+    root = repo_root()
+    run_id = new_run_id()
+    scratch = run_dir(run_id)
+    env_file = scratch / ".env"
+    write_text(env_file, "")
+    env = isolated_env()
+    env["TRIAGE_ENV_FILE"] = str(env_file)
+    env["TRIAGE_STATE_DIR"] = str(scratch / "state")
+    env["PATH"] = os.environ.get("PATH", "")
+    env["HOME"] = os.environ.get("HOME", "")
+    env["PYTHONPATH"] = str(root)
+    all_ok = True
+    missing_key = run_cli(["triage.dry_run", "--limit", "50"], "", env, root)
+    all_ok &= record(
+        "env-file",
+        run_id,
+        "missing-key",
+        ["triage.dry_run", "--limit", "50"],
+        "",
+        missing_key,
+        2,
+        "AI_GATEWAY_API_KEY is required",
+    )
+    bootstrap = run_cli(["triage.dry_run", "--bootstrap", "--limit", "50"], "nope\n", env, root)
+    all_ok &= record(
+        "bootstrap-approval",
+        run_id,
+        "reject",
+        ["triage.dry_run", "--bootstrap", "--limit", "50"],
+        "nope\n",
+        bootstrap,
+        2,
+        "Bootstrap not approved.",
+    )
+    apply = run_cli(["triage.apply", "--limit", "50"], "nope\n", env, root)
+    all_ok &= record(
+        "apply-approval",
+        run_id,
+        "reject",
+        ["triage.apply", "--limit", "50"],
+        "nope\n",
+        apply,
+        2,
+        "Apply not approved.",
+    )
+    return 0 if all_ok else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
